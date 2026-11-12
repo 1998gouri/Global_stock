@@ -1,0 +1,16 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Global Stock Monitor API",
+    "version": "0.1.0",
+    "description": "Streaming-first market monitoring API. Freshness and data entitlement are explicit; UI refresh frequency is not a guarantee of new exchange events."
+  },
+  "servers": [{"url": "http://127.0.0.1:8000"}],
+  "paths": {
+    "/health": {"get": {"summary": "Service health", "responses": {"200": {"description": "Health status"}}}},
+    "/quotes": {"get": {"summary": "Latest normalized quote snapshots", "responses": {"200": {"description": "Quote snapshots"}}}},
+    "/sources/health": {"get": {"summary": "Provider health and coverage status", "responses": {"200": {"description": "Source health"}}}},
+    "/internal/quotes": {"post": {"summary": "Internal quote ingestion", "description": "Internal-only starter endpoint; must be authenticated and restricted before deployment.", "responses": {"200": {"description": "Accepted"}}}},
+    "/ws/quotes": {"get": {"summary": "WebSocket quote event stream", "description": "Pushes normalized quote events after ingestion.", "responses": {"101": {"description": "WebSocket upgrade"}}}}
+  }
+}
