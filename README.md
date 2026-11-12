@@ -1,37 +1,36 @@
 # Global Stock Monitor
 
-A global-market monitoring platform designed around streaming-first market data, fast target-price alerts, transparent source provenance, and student-focused investing education.
+A streaming-first market-monitoring project with quote provenance, target alerts, Telegram integration planned, and student-focused financial education.
 
-> **Important:** “Live” is specific to a provider, exchange, instrument, subscription, and market session. The dashboard must never label a quote real-time unless the provider entitlement confirms it. A one-second screen refresh does not mean a new exchange price arrived in that second.
+> **Free-tier commitment:** the initial deployment will use free-access sources only. No paid subscription is required by this repository. Free access does not mean every market is real-time. The app must show actual provider entitlement and quote age.
 
-## Goals
+## Live-data expectations
 
-- Global instrument directory with exchange, MIC, and currency identifiers.
-- Streaming-first prices through licensed provider WebSockets where available.
-- Provider-approved REST fallback with quota-aware scheduling and backoff.
-- Telegram target-price alerts with cooldowns and duplicate suppression.
-- Per-quote provenance: provider, source timestamp, receive timestamp, entitlement, freshness, and quality flags.
-- Source audit for prices, filings, statements, corporate actions, news, and research.
-- Student learning hub for all budgets, risk examples, diversification, funds/ETFs/SIPs, and paper trading.
-- No fabricated prices, silent substitution of delayed data for live data, or bypassing paywalls/access controls.
+- The UI refresh target can be one second.
+- WebSocket updates arrive when a provider emits a market event; a quote is not guaranteed to change every second.
+- REST polling must obey each provider's published quota; do not poll every second unless explicitly allowed.
+- Free global equity feeds are generally incomplete, delayed, limited, or exchange-specific. We do not claim universal real-time global coverage.
+- Every quote must expose provider, exchange, source timestamp, receive timestamp, entitlement, freshness, and quality flags.
+- If data is delayed, stale, closed, unavailable, or unknown, show that status prominently rather than calling it live.
 
-## What “every second” means
+## Free provider adapter currently included
 
-- **Dashboard refresh:** may run once per second.
-- **Streaming quote:** arrives when the provider emits an event; there is no universal one-event-per-second guarantee for every instrument.
-- **REST polling:** only at intervals permitted by the provider and exchange rules. One-second polling is not enabled by default.
-- **Global coverage:** realtime entitlement, delayed feeds, instrument availability, and exchange coverage vary by provider and subscription.
-- **No missed-event guarantee:** recovery depends on provider replay/snapshot features and network conditions.
+The optional `app/providers/alpaca_stream.py` adapter connects to Alpaca's IEX WebSocket endpoint for US-listed instruments, when the user has an eligible free account and API credentials.
+
+**Important limitations:** IEX is one US exchange venue, not the consolidated US market feed and not a global feed. The free plan has limited streaming symbol capacity and coverage. Confirm current limits and terms in the provider's official documentation before relying on it:
+https://docs.alpaca.markets/us/v1.1/docs/about-market-data-api
+
+Provider notes and other free/delayed source candidates: [app/providers/README.md](app/providers/README.md).
 
 ## Architecture
 
-1. Provider adapters normalize trades, quotes, bars, and connection status.
-2. WebSockets are preferred where licensed and available.
-3. REST is a fallback, never a reason to exceed quotas.
-4. A latest-quote cache supports dashboard snapshots and event streaming.
-5. Freshness monitor classifies data as LIVE, DELAYED, STALE, CLOSED, UNAVAILABLE, or UNKNOWN.
-6. Alert engine evaluates accepted market events and applies persisted cooldowns.
-7. Source-health audit records disconnects, throttling, missing fields, errors, and reconnect attempts.
+1. Provider adapters normalize trades and quotes.
+2. WebSockets are preferred where a free entitlement allows it.
+3. REST fallback is quota-aware and never assumes a one-second interval.
+4. A quote cache and WebSocket API distribute received events.
+5. Freshness states are LIVE, DELAYED, STALE, CLOSED, UNAVAILABLE, and UNKNOWN.
+6. Alert evaluation occurs on accepted market events with cooldown checks.
+7. Source-health audit records disconnects, errors, and gaps.
 
 ## Quick start
 
@@ -48,63 +47,55 @@ uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000/health` and `http://127.0.0.1:8000/docs`.
 
-## Configuration
+## Configuration and secrets
 
-Configure secrets only in environment variables or a local `.env` file. Never commit API keys or Telegram bot tokens.
+Keep credentials in environment variables or local `.env`; never commit API keys or Telegram tokens. The current default `DATA_PROVIDER=demo` does not provide real prices.
 
-- `DATA_PROVIDER`: currently `demo` by default.
-- `DATA_API_KEY`: provider API key when required.
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: Telegram delivery credentials.
-- `QUOTE_STALE_AFTER_SECONDS`: stale threshold.
-- `ALERT_COOLDOWN_SECONDS`: minimum repeat alert interval.
-- `UI_REFRESH_SECONDS`: UI refresh target (default 1).
+The Alpaca adapter currently exposes a reusable stream function. It is not yet wired into application startup or the quote ingestion lifecycle. Add credentials only in your own deployment environment:
+- `ALPACA_API_KEY`
+- `ALPACA_API_SECRET`
 
-**Demo mode is not live market data.** A real provider adapter and a valid exchange-level realtime entitlement must be configured before any quote can be described as live. The current code is a starter service skeleton, not a finished production trading terminal.
+Telegram variables are reserved for the upcoming notification implementation:
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
 ## API
 
 - `GET /health` — service health.
-- `GET /quotes` — latest normalized snapshots.
+- `GET /quotes` — latest normalized quote snapshots.
 - `GET /sources/health` — provider health.
-- `POST /internal/quotes` — internal ingestion hook (not public; add authentication before deployment).
-- `WS /ws/quotes` — push quote events to clients.
+- `POST /internal/quotes` — internal ingestion hook; secure before deployment.
+- `WS /ws/quotes` — push ingested quote events.
 - `GET /docs` — interactive API documentation.
 
 See [openapi.json](openapi.json) and [PROTOCOL.md](PROTOCOL.md).
 
-## Provider strategy
-
-Provider support must be checked for each exchange, asset class, instrument, and entitlement. Examples of official documentation to evaluate:
-- EODHD WebSocket API: https://eodhd.com/financial-apis/new-real-time-data-api-websockets
-- Alpha Vantage API documentation: https://www.alphavantage.co/documentation/
-- Webull market-data streaming documentation: https://developer.webull.com/apis/docs/market-data-api/data-streaming-api/
-
-These examples are not a claim that any one provider supplies realtime prices for every world exchange. Confirm exchange coverage, realtime/delayed status, redistribution rights, request quotas, and subscription cost before selecting a provider.
-
 ## Security and deployment
 
-- Keep credentials in environment variables or a secrets manager.
-- Use HTTPS/WSS and authentication in deployed environments.
-- Protect internal ingestion routes; do not expose the starter internal endpoint publicly.
-- Use persistent storage (e.g. PostgreSQL/Redis) for production watchlists, alerts, event IDs, and audit history.
-- Use an always-on worker/container for streaming. GitHub Actions is not a reliable one-second scheduler.
+- Use HTTPS/WSS in deployment.
+- Authenticate APIs and protect internal ingestion routes.
+- Use persistent storage for watchlists, alerts, idempotency, and audit history.
+- Run streaming on an always-on worker; GitHub Actions is not a one-second scheduler.
 - Respect exchange/provider licensing, attribution, redistribution restrictions, and API quotas.
+- Never scrape private endpoints or evade provider limits.
 
-## Current implementation status
+## Implementation status
 
-Implemented in this initial commit series:
-- FastAPI service skeleton and health/quote/source-health endpoints.
-- Normalized quote, freshness, entitlement, alert-rule, and source-health models.
-- Event-driven downward target rule evaluator with cooldown check.
-- WebSocket endpoint for broadcasting ingested quote events.
-- Protocol specification, dependency list, and environment template.
+Implemented:
+- FastAPI starter service, health, quote and source-health endpoints.
+- Normalized quote, freshness, entitlement, alert-rule and source-health models.
+- Downward target alert evaluator with cooldown check.
+- WebSocket broadcast endpoint.
+- Optional Alpaca IEX streaming adapter with reconnect backoff.
+- Provider coverage notes, protocol, dependency list, environment template, and OpenAPI contract.
 
-Not yet implemented:
-- Real provider adapter / verified exchange-level realtime feed.
-- Telegram sender and delivery retry persistence.
-- Durable database, authentication, production dashboard, global instrument master, and full research/source-audit ingestion.
-- Automated tests, deployment, and operational monitoring.
+Still needed before a usable live deployment:
+- Wire the provider adapter into application startup and ingestion.
+- Verify current Alpaca account entitlements and test a real IEX subscription.
+- Persist quotes/alerts/audit events and add idempotent Telegram delivery.
+- Build dashboard, global instrument directory, source audit and student hub.
+- Add authentication, automated tests, deployment and monitoring.
 
-## Reflection and trade-offs
+## Trade-offs
 
-The system prioritizes correctness and traceability over claiming universal realtime coverage. Streaming reduces latency and polling load, but coverage and entitlements differ by venue and may cost money. A one-second UI refresh is inexpensive; one-second REST polling across a large global universe is not. The platform should visibly degrade rather than silently present stale prices as live.
+The project prioritizes truthfulness and traceability over a misleading “live” badge. A one-second UI refresh is inexpensive; a one-second global polling loop is not feasible under most free quotas. The system should degrade visibly rather than silently present stale data as current.
